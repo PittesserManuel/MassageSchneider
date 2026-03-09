@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
+import LayoutShell from '@/components/LayoutShell';
 
 export const metadata: Metadata = {
   title: 'Massageinstitut Sabine Schneider | Neunkirchen',
@@ -27,9 +26,7 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body className="antialiased">
-        <Navbar />
-        {children}
-        <Footer />
+        <LayoutShell>{children}</LayoutShell>
       </body>
     </html>
   );

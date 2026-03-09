@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Menu, X, Phone } from 'lucide-react';
+import { Menu, X, Phone, User } from 'lucide-react';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -62,6 +62,15 @@ export default function Navbar() {
               <Phone size={16} />
               <span>Jetzt anrufen</span>
             </a>
+            <Link
+              href="/login"
+              className={`p-2 rounded-full transition-colors ${
+                isScrolled ? 'text-gray-600 hover:bg-gray-100' : 'text-white/80 hover:text-white'
+              }`}
+              title="Anmelden"
+            >
+              <User size={20} />
+            </Link>
           </div>
 
           {/* Mobile hamburger */}
@@ -97,6 +106,14 @@ export default function Navbar() {
               <Phone size={16} />
               <span>0664 4126412</span>
             </a>
+            <Link
+              href="/login"
+              onClick={() => setIsMobileOpen(false)}
+              className="flex items-center justify-center space-x-2 text-gray-700 font-medium py-2 hover:text-massage-600 transition-colors"
+            >
+              <User size={18} />
+              <span>Anmelden</span>
+            </Link>
           </div>
         </div>
       )}
