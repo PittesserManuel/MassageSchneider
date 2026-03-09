@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { supabaseAdmin, isSupabaseConfigured } from './supabase';
 
 export type UserRole = 'admin' | 'customer';
 
@@ -10,8 +11,8 @@ export interface User {
   phone?: string;
 }
 
-// Local user store — replace with Supabase later
-const users: (User & { password: string })[] = [
+// ── Local fallback store ──────────────────────────────────
+const localUsers: (User & { password: string })[] = [
   {
     id: 'admin-1',
     email: 'admin@massageschneider.at',
@@ -30,27 +31,74 @@ const users: (User & { password: string })[] = [
   },
 ];
 
-export function findUserByCredentials(email: string, password: string): User | null {
-  const user = users.find((u) => u.email === email && u.password === password);
+// ── User lookup ───────────────────────────────────────────
+export async function findUserByCredentials(email: string, password: string): Promise<User | null> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('id, email, name, role, phone')
+        .eq('email', email)
+        .single();
+
+      if (!error && data) {
+        // Note: passwords should be handled by Supabase Auth in production.
+        // For now we still accept the local password check as a bridge.
+        const localMatch = localUsers.find((u) => u.email === email && u.password === password);
+        if (localMatch) return data as User;
+      }
+    } catch {
+      // Supabase not reachable — fall through to local
+    }
+  }
+
+  const user = localUsers.find((u) => u.email === email && u.password === password);
   if (!user) return null;
   const { password: _pw, ...safeUser } = user; // eslint-disable-line @typescript-eslint/no-unused-vars
   return safeUser;
 }
 
-export function findUserById(id: string): User | null {
-  const user = users.find((u) => u.id === id);
+export async function findUserById(id: string): Promise<User | null> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('id, email, name, role, phone')
+        .eq('id', id)
+        .single();
+
+      if (!error && data) return data as User;
+    } catch {
+      // fall through to local
+    }
+  }
+
+  const user = localUsers.find((u) => u.id === id);
   if (!user) return null;
   const { password: _pw, ...safeUser } = user; // eslint-disable-line @typescript-eslint/no-unused-vars
   return safeUser;
 }
 
-export function getAllCustomers(): User[] {
-  return users
+export async function getAllCustomers(): Promise<User[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('id, email, name, role, phone')
+        .eq('role', 'customer');
+
+      if (!error && data) return data as User[];
+    } catch {
+      // fall through
+    }
+  }
+
+  return localUsers
     .filter((u) => u.role === 'customer')
     .map(({ password: _pw, ...u }) => u); // eslint-disable-line @typescript-eslint/no-unused-vars
 }
 
-// Simple session token: base64(userId) — replace with JWT/Supabase session later
+// ── Session management ────────────────────────────────────
 export function createSessionToken(userId: string): string {
   return Buffer.from(userId).toString('base64');
 }

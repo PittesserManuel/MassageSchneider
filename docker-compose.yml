@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  # ── Next.js App ──────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=http://localhost:8000
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Supabase Postgres ────────────────────────────────────
+  supabase-db:
+    image: supabase/postgres:15.6.1.143
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: massage_schneider
+    volumes:
+      - supabase-db-data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Supabase Kong (API Gateway) ──────────────────────────
+  supabase-kong:
+    image: kong:2.8.1
+    ports:
+      - '8000:8000'
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+    volumes:
+      - ./supabase/kong.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Supabase Auth (GoTrue) ──────────────────────────────
+  supabase-auth:
+    image: supabase/gotrue:v2.164.0
+    ports:
+      - '9999:9999'
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: http://localhost:8000
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:postgres@supabase-db:5432/massage_schneider
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: ''
+      GOTRUE_DISABLE_SIGNUP: 'false'
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+      GOTRUE_MAILER_AUTOCONFIRM: 'true'
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Supabase REST (PostgREST) ────────────────────────────
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.3
+    ports:
+      - '3001:3000'
+    environment:
+      PGRST_DB_URI: postgres://authenticator:postgres@supabase-db:5432/massage_schneider
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters-long}
+      PGRST_DB_USE_LEGACY_GUCS: 'false'
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  supabase-db-data:

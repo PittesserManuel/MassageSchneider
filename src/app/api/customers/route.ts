@@ -7,6 +7,6 @@ export async function GET() {
     return NextResponse.json({ error: 'Nicht berechtigt' }, { status: 403 });
   }
 
-  const customers = getAllCustomers();
+  const customers = await getAllCustomers();
   return NextResponse.json({ customers });
 }

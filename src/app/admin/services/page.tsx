@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { Edit2, Plus, X, Trash2, Image as ImageIcon, Save } from 'lucide-react';
-import { services, categories, type MassageService } from '@/data/services';
+import { useState, useEffect } from 'react';
+import { Edit2, Plus, X, Trash2, Image as ImageIcon, Save, Loader2 } from 'lucide-react';
+import { categories, type MassageService } from '@/data/services';
 
 interface ServiceFormData {
   name: string;
@@ -29,13 +29,39 @@ const emptyForm: ServiceFormData = {
 const availableIcons = ['💆', '🫧', '🩹', '🌿', '🪨', '🫙', '🤰', '🦶', '✨', '🧖', '🙌', '💪', '🧴', '🌸'];
 
 export default function AdminServices() {
-  const [serviceList, setServiceList] = useState<MassageService[]>(services);
+  const [serviceList, setServiceList] = useState<MassageService[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<ServiceFormData>(emptyForm);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState<ServiceFormData>(emptyForm);
   const [imagePreviewError, setImagePreviewError] = useState<Record<string, boolean>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    loadServices();
+  }, []);
+
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toast]);
+
+  async function loadServices() {
+    try {
+      const res = await fetch('/api/services');
+      const data = await res.json();
+      setServiceList(data.services || []);
+    } catch {
+      setToast({ message: 'Services konnten nicht geladen werden', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function startEdit(service: MassageService) {
     setEditingId(service.id);
@@ -52,54 +78,109 @@ export default function AdminServices() {
     setImagePreviewError({});
   }
 
-  function saveEdit(id: string) {
-    setServiceList((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              name: editForm.name,
-              description: editForm.description,
-              longDescription: editForm.longDescription,
-              icon: editForm.icon,
-              category: editForm.category,
-              image: editForm.image,
-              durations: editForm.durations,
-              tags: editForm.tags,
-            }
-          : s
-      )
-    );
-    setEditingId(null);
-  }
+  async function saveEdit(id: string) {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/services', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...editForm }),
+      });
 
-  function addService() {
-    if (!addForm.name.trim() || !addForm.description.trim()) return;
-
-    const newService: MassageService = {
-      id: addForm.name.toLowerCase().replace(/[^a-z0-9äöüß]/g, '-').replace(/-+/g, '-'),
-      name: addForm.name,
-      description: addForm.description,
-      longDescription: addForm.longDescription || addForm.description,
-      icon: addForm.icon,
-      category: addForm.category,
-      image: addForm.image || 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=600&h=400&fit=crop',
-      durations: addForm.durations.filter((d) => d.minutes > 0 && d.price > 0),
-      tags: addForm.tags,
-    };
-
-    if (newService.durations.length === 0) {
-      newService.durations = [{ minutes: 30, price: 0 }];
+      if (res.ok) {
+        setServiceList((prev) =>
+          prev.map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  name: editForm.name,
+                  description: editForm.description,
+                  longDescription: editForm.longDescription,
+                  icon: editForm.icon,
+                  category: editForm.category,
+                  image: editForm.image,
+                  durations: editForm.durations,
+                  tags: editForm.tags,
+                }
+              : s
+          )
+        );
+        setEditingId(null);
+        setToast({ message: 'Service gespeichert', type: 'success' });
+      } else {
+        setToast({ message: 'Fehler beim Speichern', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Netzwerkfehler', type: 'error' });
+    } finally {
+      setSaving(false);
     }
-
-    setServiceList((prev) => [...prev, newService]);
-    setAddForm(emptyForm);
-    setShowAddModal(false);
   }
 
-  function deleteService(id: string) {
-    setServiceList((prev) => prev.filter((s) => s.id !== id));
-    setDeleteConfirmId(null);
+  async function addService() {
+    if (!addForm.name.trim() || !addForm.description.trim()) return;
+    setSaving(true);
+
+    try {
+      const res = await fetch('/api/services', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(addForm),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const newService: MassageService = {
+          id: data.id,
+          name: addForm.name,
+          description: addForm.description,
+          longDescription: addForm.longDescription || addForm.description,
+          icon: addForm.icon,
+          category: addForm.category,
+          image: addForm.image || 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=600&h=400&fit=crop',
+          durations: addForm.durations.filter((d) => d.minutes > 0 && d.price > 0),
+          tags: addForm.tags,
+        };
+
+        if (newService.durations.length === 0) {
+          newService.durations = [{ minutes: 30, price: 0 }];
+        }
+
+        setServiceList((prev) => [...prev, newService]);
+        setAddForm(emptyForm);
+        setShowAddModal(false);
+        setToast({ message: 'Service hinzugefügt', type: 'success' });
+      } else {
+        setToast({ message: 'Fehler beim Hinzufügen', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Netzwerkfehler', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteService(id: string) {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/services', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+
+      if (res.ok) {
+        setServiceList((prev) => prev.filter((s) => s.id !== id));
+        setToast({ message: 'Service gelöscht', type: 'success' });
+      } else {
+        setToast({ message: 'Fehler beim Löschen', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Netzwerkfehler', type: 'error' });
+    } finally {
+      setSaving(false);
+      setDeleteConfirmId(null);
+    }
   }
 
   function renderImageField(
@@ -287,10 +368,11 @@ export default function AdminServices() {
         <div className="flex items-center space-x-2 pt-2">
           <button
             onClick={() => saveEdit(service.id)}
-            className="flex items-center space-x-1.5 px-4 py-2 bg-massage-600 hover:bg-massage-700 text-white rounded-lg text-sm font-medium transition-colors"
+            disabled={saving}
+            className="flex items-center space-x-1.5 px-4 py-2 bg-massage-600 hover:bg-massage-700 disabled:bg-massage-400 text-white rounded-lg text-sm font-medium transition-colors"
           >
-            <Save size={14} />
-            <span>Speichern</span>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            <span>{saving ? 'Speichert...' : 'Speichern'}</span>
           </button>
           <button
             onClick={() => setEditingId(null)}
@@ -303,8 +385,25 @@ export default function AdminServices() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="animate-spin text-massage-600" size={32} />
+      </div>
+    );
+  }
+
   return (
     <div>
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${
+          toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-serif font-bold text-gray-900">Services verwalten</h1>
         <button
@@ -321,83 +420,86 @@ export default function AdminServices() {
 
       {/* Service List */}
       <div className="bg-white rounded-2xl shadow-sm divide-y divide-gray-50">
-        {serviceList.map((service) => (
-          <div key={service.id} className="p-5">
-            {editingId === service.id ? (
-              renderEditForm(service)
-            ) : (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
-                    <img
-                      src={service.image}
-                      alt={service.name}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-lg">{service.icon}</span>
-                      <p className="font-medium text-gray-900">{service.name}</p>
-                    </div>
-                    <p className="text-sm text-gray-500">{service.description.slice(0, 80)}...</p>
-                    <div className="flex items-center space-x-3 mt-1">
-                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                        {categories.find((c) => c.id === service.category)?.name}
-                      </span>
-                      {service.durations.map((d) => (
-                        <span key={d.minutes} className="text-xs text-gray-400">
-                          {d.minutes} Min. · €{d.price}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <button
-                    onClick={() => startEdit(service)}
-                    className="p-2 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-massage-600 transition-colors"
-                    title="Bearbeiten"
-                  >
-                    <Edit2 size={18} />
-                  </button>
-                  {deleteConfirmId === service.id ? (
-                    <div className="flex items-center space-x-1 ml-1">
-                      <button
-                        onClick={() => deleteService(service.id)}
-                        className="px-2 py-1 bg-red-500 text-white rounded text-xs font-medium hover:bg-red-600 transition-colors"
-                      >
-                        Löschen
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirmId(null)}
-                        className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition-colors"
-                      >
-                        Nein
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setDeleteConfirmId(service.id)}
-                      className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
-                      title="Löschen"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+        {serviceList.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <p>Keine Services vorhanden.</p>
           </div>
-        ))}
+        ) : (
+          serviceList.map((service) => (
+            <div key={service.id} className="p-5">
+              {editingId === service.id ? (
+                renderEditForm(service)
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-4">
+                    <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+                      <img
+                        src={service.image}
+                        alt={service.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-lg">{service.icon}</span>
+                        <p className="font-medium text-gray-900">{service.name}</p>
+                      </div>
+                      <p className="text-sm text-gray-500">{service.description.slice(0, 80)}...</p>
+                      <div className="flex items-center space-x-3 mt-1">
+                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                          {categories.find((c) => c.id === service.category)?.name}
+                        </span>
+                        {service.durations.map((d) => (
+                          <span key={d.minutes} className="text-xs text-gray-400">
+                            {d.minutes} Min. · €{d.price}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => startEdit(service)}
+                      className="p-2 rounded-lg text-gray-400 hover:bg-gray-50 hover:text-massage-600 transition-colors"
+                      title="Bearbeiten"
+                    >
+                      <Edit2 size={18} />
+                    </button>
+                    {deleteConfirmId === service.id ? (
+                      <div className="flex items-center space-x-1 ml-1">
+                        <button
+                          onClick={() => deleteService(service.id)}
+                          disabled={saving}
+                          className="px-2 py-1 bg-red-500 text-white rounded text-xs font-medium hover:bg-red-600 transition-colors"
+                        >
+                          {saving ? '...' : 'Löschen'}
+                        </button>
+                        <button
+                          onClick={() => setDeleteConfirmId(null)}
+                          className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs font-medium hover:bg-gray-200 transition-colors"
+                        >
+                          Nein
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteConfirmId(service.id)}
+                        className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                        title="Löschen"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
-
-      <p className="text-sm text-gray-400 mt-4 text-center">
-        Hinweis: Änderungen werden lokal gespeichert. Nach Supabase-Migration werden sie persistent.
-      </p>
 
       {/* Add Service Modal */}
       {showAddModal && (
@@ -517,11 +619,11 @@ export default function AdminServices() {
               </button>
               <button
                 onClick={addService}
-                disabled={!addForm.name.trim() || !addForm.description.trim()}
+                disabled={!addForm.name.trim() || !addForm.description.trim() || saving}
                 className="flex items-center space-x-1.5 px-5 py-2.5 bg-massage-600 hover:bg-massage-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
               >
-                <Plus size={14} />
-                <span>Service hinzufügen</span>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                <span>{saving ? 'Wird hinzugefügt...' : 'Service hinzufügen'}</span>
               </button>
             </div>
           </div>

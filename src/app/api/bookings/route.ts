@@ -9,7 +9,7 @@ export async function GET() {
   }
 
   const bookings =
-    user.role === 'admin' ? getAllBookings() : getBookingsForCustomer(user.id);
+    user.role === 'admin' ? await getAllBookings() : await getBookingsForCustomer(user.id);
 
   return NextResponse.json({ bookings });
 }
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const booking = addBooking({
+  const booking = await addBooking({
     customerId: user.id,
     customerName: user.name,
     serviceId: body.serviceId,
